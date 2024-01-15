@@ -15,22 +15,13 @@
  */
 package org.apache.ibatis.type;
 
+import org.apache.ibatis.io.ResolverUtil;
+import org.apache.ibatis.io.Resources;
+
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.sql.ResultSet;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.Date;
-import java.util.HashMap;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Locale;
-import java.util.Map;
-import java.util.Set;
-
-import org.apache.ibatis.io.ResolverUtil;
-import org.apache.ibatis.io.Resources;
+import java.util.*;
 
 /**
  * @author Clinton Begin
@@ -39,6 +30,9 @@ public class TypeAliasRegistry {
 
   private final Map<String, Class<?>> typeAliases = new HashMap<>();
 
+  /**
+   * mybatis默认的别名映射
+   */
   public TypeAliasRegistry() {
     registerAlias("string", String.class);
 
@@ -139,6 +133,7 @@ public class TypeAliasRegistry {
   }
 
   public void registerAlias(Class<?> type) {
+    // 如果有注解，拿到注解上的value
     String alias = type.getSimpleName();
     Alias aliasAnnotation = type.getAnnotation(Alias.class);
     if (aliasAnnotation != null) {
@@ -152,6 +147,7 @@ public class TypeAliasRegistry {
       throw new TypeException("The parameter alias cannot be null");
     }
     // issue #748
+    // 全部转成小写
     String key = alias.toLowerCase(Locale.ENGLISH);
     if (typeAliases.containsKey(key) && typeAliases.get(key) != null && !typeAliases.get(key).equals(value)) {
       throw new TypeException("The alias '" + alias + "' is already mapped to the value '" + typeAliases.get(key).getName() + "'.");
