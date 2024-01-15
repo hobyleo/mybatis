@@ -12,7 +12,10 @@
     </settings>
 
     <plugins>
-        <plugin interceptor="com.hoby.plugin.ExamplePlugin"/>
+        <plugin interceptor="com.hoby.plugin.ExamplePlugin">
+            <property name="key1" value="value1"/>
+            <property name="key2" value="value2"/>
+        </plugin>
     </plugins>
 
     <environments default="development">
