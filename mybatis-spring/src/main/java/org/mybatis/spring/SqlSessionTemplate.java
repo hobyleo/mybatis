@@ -15,13 +15,12 @@
  */
 package org.mybatis.spring;
 
-import static java.lang.reflect.Proxy.newProxyInstance;
-
-import static org.apache.ibatis.reflection.ExceptionUtil.unwrapThrowable;
-import static org.mybatis.spring.SqlSessionUtils.closeSqlSession;
-import static org.mybatis.spring.SqlSessionUtils.getSqlSession;
-import static org.mybatis.spring.SqlSessionUtils.isSqlSessionTransactional;
-import static org.springframework.util.Assert.notNull;
+import org.apache.ibatis.cursor.Cursor;
+import org.apache.ibatis.exceptions.PersistenceException;
+import org.apache.ibatis.executor.BatchResult;
+import org.apache.ibatis.session.*;
+import org.springframework.beans.factory.DisposableBean;
+import org.springframework.dao.support.PersistenceExceptionTranslator;
 
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Method;
@@ -29,17 +28,10 @@ import java.sql.Connection;
 import java.util.List;
 import java.util.Map;
 
-import org.apache.ibatis.cursor.Cursor;
-import org.apache.ibatis.exceptions.PersistenceException;
-import org.apache.ibatis.executor.BatchResult;
-import org.apache.ibatis.session.Configuration;
-import org.apache.ibatis.session.ExecutorType;
-import org.apache.ibatis.session.ResultHandler;
-import org.apache.ibatis.session.RowBounds;
-import org.apache.ibatis.session.SqlSession;
-import org.apache.ibatis.session.SqlSessionFactory;
-import org.springframework.beans.factory.DisposableBean;
-import org.springframework.dao.support.PersistenceExceptionTranslator;
+import static java.lang.reflect.Proxy.newProxyInstance;
+import static org.apache.ibatis.reflection.ExceptionUtil.unwrapThrowable;
+import static org.mybatis.spring.SqlSessionUtils.*;
+import static org.springframework.util.Assert.notNull;
 
 /**
  * Thread safe, Spring managed, {@code SqlSession} that works with Spring transaction management to ensure that that the
@@ -89,6 +81,7 @@ public class SqlSessionTemplate implements SqlSession, DisposableBean {
    *          a factory of SqlSession
    */
   public SqlSessionTemplate(SqlSessionFactory sqlSessionFactory) {
+    // mybatis整合spring的时候会调用该方法对sqlSessionTemplate进行赋值
     this(sqlSessionFactory, sqlSessionFactory.getConfiguration().getDefaultExecutorType());
   }
 
@@ -107,6 +100,8 @@ public class SqlSessionTemplate implements SqlSession, DisposableBean {
   }
 
   /**
+   * 真正会调该构造方法进行赋值初始化
+   *
    * Constructs a Spring managed {@code SqlSession} with the given {@code SqlSessionFactory} and {@code ExecutorType}. A
    * custom {@code SQLExceptionTranslator} can be provided as an argument so any {@code PersistenceException} thrown by
    * MyBatis can be custom translated to a {@code RuntimeException} The {@code SQLExceptionTranslator} can also be null
@@ -128,6 +123,7 @@ public class SqlSessionTemplate implements SqlSession, DisposableBean {
     this.sqlSessionFactory = sqlSessionFactory;
     this.executorType = executorType;
     this.exceptionTranslator = exceptionTranslator;
+    // sqlSession代理对象 来调用我们的目标方法
     this.sqlSessionProxy = (SqlSession) newProxyInstance(SqlSessionFactory.class.getClassLoader(),
         new Class[] { SqlSession.class }, new SqlSessionInterceptor());
   }
@@ -157,6 +153,9 @@ public class SqlSessionTemplate implements SqlSession, DisposableBean {
    */
   @Override
   public <T> T selectOne(String statement, Object parameter) {
+    /**
+     * 因为sqlSessionProxy是sqlSession的一个代理对象，所以会调用代理对象SqlSessionInterceptor.invoke方法
+     */
     return this.sqlSessionProxy.selectOne(statement, parameter);
   }
 
@@ -421,13 +420,22 @@ public class SqlSessionTemplate implements SqlSession, DisposableBean {
   private class SqlSessionInterceptor implements InvocationHandler {
     @Override
     public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
+      /**
+       * 尝试从事务的线程变量中获取session，若没有获取到就直接新开一个session，所以加事务可以缓存sqlSession(也就是SqlSessionTemplate对象)
+       */
       SqlSession sqlSession = getSqlSession(SqlSessionTemplate.this.sqlSessionFactory,
           SqlSessionTemplate.this.executorType, SqlSessionTemplate.this.exceptionTranslator);
       try {
+        /**
+         * 调用session接口的方法，因为上一步返回的session是DefaultSqlSession对象，所以在这里直接调用DefaultSqlSession的方法
+         */
         Object result = method.invoke(sqlSession, args);
         if (!isSqlSessionTransactional(sqlSession, SqlSessionTemplate.this.sqlSessionFactory)) {
           // force commit even on non-dirty sessions because some databases require
           // a commit/rollback before calling close()
+          /**
+           * 提交我们的session
+           */
           sqlSession.commit(true);
         }
         return result;
@@ -435,6 +443,9 @@ public class SqlSessionTemplate implements SqlSession, DisposableBean {
         Throwable unwrapped = unwrapThrowable(t);
         if (SqlSessionTemplate.this.exceptionTranslator != null && unwrapped instanceof PersistenceException) {
           // release the connection to avoid a deadlock if the translator is no loaded. See issue #22
+          /**
+           * 抛异常 关闭我们的session
+           */
           closeSqlSession(sqlSession, SqlSessionTemplate.this.sqlSessionFactory);
           sqlSession = null;
           Throwable translated = SqlSessionTemplate.this.exceptionTranslator

@@ -15,11 +15,6 @@
  */
 package org.mybatis.spring.mapper;
 
-import java.lang.annotation.Annotation;
-import java.util.Arrays;
-import java.util.Optional;
-import java.util.Set;
-
 import org.apache.ibatis.io.Resources;
 import org.apache.ibatis.session.SqlSessionFactory;
 import org.mybatis.logging.Logger;
@@ -39,6 +34,11 @@ import org.springframework.context.annotation.ClassPathBeanDefinitionScanner;
 import org.springframework.core.type.filter.AnnotationTypeFilter;
 import org.springframework.core.type.filter.AssignableTypeFilter;
 import org.springframework.util.StringUtils;
+
+import java.lang.annotation.Annotation;
+import java.util.Arrays;
+import java.util.Optional;
+import java.util.Set;
 
 /**
  * A {@link ClassPathBeanDefinitionScanner} that registers Mappers by {@code basePackage}, {@code annotationClass}, or
@@ -167,12 +167,18 @@ public class ClassPathMapperScanner extends ClassPathBeanDefinitionScanner {
   public void registerFilters() {
     boolean acceptAllInterfaces = true;
 
+    /**
+     * 如果annotationClass不为空，表示用户设置了此属性，则会使用AnnotationTypeFilter保证在扫描对应Java文件时只接受标记有注解为annotationClass的接口
+     */
     // if specified, use the given annotation and / or marker interface
     if (this.annotationClass != null) {
       addIncludeFilter(new AnnotationTypeFilter(this.annotationClass));
       acceptAllInterfaces = false;
     }
 
+    /**
+     * 如果markerInterface不为空，表示用户设置了此属性，则会使用AssignableTypeFilter接口的匿名内部类，扫描过程中只有实现markerInterface接口才会被接受
+     */
     // override AssignableTypeFilter to ignore matches on the actual marker interface
     if (this.markerInterface != null) {
       addIncludeFilter(new AssignableTypeFilter(this.markerInterface) {
@@ -184,11 +190,17 @@ public class ClassPathMapperScanner extends ClassPathBeanDefinitionScanner {
       acceptAllInterfaces = false;
     }
 
+    /**
+     * 如果接受所有接口，则添加自定义 INCLUDE 过滤器 TypeFilter，全部返回 true
+     */
     if (acceptAllInterfaces) {
       // default include filter that accepts all classes
       addIncludeFilter((metadataReader, metadataReaderFactory) -> true);
     }
 
+    /**
+     * 排除 package-info.java 文件
+     */
     // exclude package-info.java
     addExcludeFilter((metadataReader, metadataReaderFactory) -> {
       String className = metadataReader.getClassMetadata().getClassName();
@@ -197,17 +209,26 @@ public class ClassPathMapperScanner extends ClassPathBeanDefinitionScanner {
   }
 
   /**
+   * 真正调用扫描@MapperScan指定路径下的mapper包
    * Calls the parent search that will search and register all the candidates. Then the registered objects are post
    * processed to set them as MapperFactoryBeans
    */
   @Override
   public Set<BeanDefinitionHolder> doScan(String... basePackages) {
+    /**
+     * 调用父类ClassPathBeanDefinitionScanner来进行扫描
+     */
     Set<BeanDefinitionHolder> beanDefinitions = super.doScan(basePackages);
 
     if (beanDefinitions.isEmpty()) {
       LOGGER.warn(() -> "No MyBatis mapper was found in '" + Arrays.toString(basePackages)
           + "' package. Please check your configuration.");
     } else {
+      /**
+       * 现在我通过父类扫描出来的mapper是接口类型的
+       * 比如com.hoby.mapper.UserMapper它是一个接口
+       * 但是接口是不能实例化的，所以mybatis通过在processBeanDefinitions方法中来进行“偷天换日”的骚操作
+       */
       processBeanDefinitions(beanDefinitions);
     }
 
@@ -217,7 +238,11 @@ public class ClassPathMapperScanner extends ClassPathBeanDefinitionScanner {
   private void processBeanDefinitions(Set<BeanDefinitionHolder> beanDefinitions) {
     AbstractBeanDefinition definition;
     BeanDefinitionRegistry registry = getRegistry();
+    /**
+     * 循环所有扫描出来的mapper的bean定义
+     */
     for (BeanDefinitionHolder holder : beanDefinitions) {
+      // 获取bean定义
       definition = (AbstractBeanDefinition) holder.getBeanDefinition();
       boolean scopedProxy = false;
       if (ScopedProxyFactoryBean.class.getName().equals(definition.getBeanClassName())) {
@@ -227,12 +252,14 @@ public class ClassPathMapperScanner extends ClassPathBeanDefinitionScanner {
                 "The target bean definition of scoped proxy bean not found. Root bean definition[" + holder + "]"));
         scopedProxy = true;
       }
+      // bean定义的名称
       String beanClassName = definition.getBeanClassName();
       LOGGER.debug(() -> "Creating MapperFactoryBean with name '" + holder.getBeanName() + "' and '" + beanClassName
           + "' mapperInterface");
 
       // the mapper interface is the original class of the bean
       // but, the actual class of the bean is MapperFactoryBean
+      // 设置ConstructorArgumentValues，会通过构造器初始化对象
       definition.getConstructorArgumentValues().addGenericArgumentValue(beanClassName); // issue #59
       try {
         // for spring-native
@@ -241,6 +268,7 @@ public class ClassPathMapperScanner extends ClassPathBeanDefinitionScanner {
         // ignore
       }
 
+      // 设置成FactoryBean
       definition.setBeanClass(this.mapperFactoryBeanClass);
 
       definition.getPropertyValues().add("addToConfig", this.addToConfig);
@@ -249,6 +277,9 @@ public class ClassPathMapperScanner extends ClassPathBeanDefinitionScanner {
       // https://github.com/mybatis/spring-boot-starter/issues/475
       definition.setAttribute(FACTORY_BEAN_OBJECT_TYPE, beanClassName);
 
+      /**
+       * 为Mapper对象绑定sqlSessionFactory引用
+       */
       boolean explicitFactoryUsed = false;
       if (StringUtils.hasText(this.sqlSessionFactoryBeanName)) {
         definition.getPropertyValues().add("sqlSessionFactory",
@@ -259,6 +290,9 @@ public class ClassPathMapperScanner extends ClassPathBeanDefinitionScanner {
         explicitFactoryUsed = true;
       }
 
+      /**
+       * 为Mapper对象绑定sqlSessionTemplate引用
+       */
       if (StringUtils.hasText(this.sqlSessionTemplateBeanName)) {
         if (explicitFactoryUsed) {
           LOGGER.warn(
@@ -278,6 +312,11 @@ public class ClassPathMapperScanner extends ClassPathBeanDefinitionScanner {
 
       if (!explicitFactoryUsed) {
         LOGGER.debug(() -> "Enabling autowire by type for MapperFactoryBean with name '" + holder.getBeanName() + "'.");
+        /**
+         * 这里设置为AUTOWIRE_BY_TYPE，为什么？
+         * 第一：字段上不需要写@AutoWired注解
+         * 第二：假设是BY_NAME的话，那么我们自己配置的bean的名称不是相同的话就会抛出异常
+         */
         definition.setAutowireMode(AbstractBeanDefinition.AUTOWIRE_BY_TYPE);
       }
 
@@ -291,6 +330,9 @@ public class ClassPathMapperScanner extends ClassPathBeanDefinitionScanner {
         definition.setScope(defaultScope);
       }
 
+      /**
+       * 如果不是单例的，则根据scope注册一个BeanDefinitionHolder
+       */
       if (!definition.isSingleton()) {
         BeanDefinitionHolder proxyHolder = ScopedProxyUtils.createScopedProxy(holder, registry, true);
         if (registry.containsBeanDefinition(proxyHolder.getBeanName())) {

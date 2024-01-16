@@ -15,12 +15,12 @@
  */
 package org.mybatis.spring.support;
 
-import static org.springframework.util.Assert.notNull;
-
 import org.apache.ibatis.session.SqlSession;
 import org.apache.ibatis.session.SqlSessionFactory;
 import org.mybatis.spring.SqlSessionTemplate;
 import org.springframework.dao.support.DaoSupport;
+
+import static org.springframework.util.Assert.notNull;
 
 /**
  * Convenient super class for MyBatis SqlSession data access objects. It gives you access to the template which can then
@@ -48,6 +48,7 @@ public abstract class SqlSessionDaoSupport extends DaoSupport {
    *          a factory of SqlSession
    */
   public void setSqlSessionFactory(SqlSessionFactory sqlSessionFactory) {
+    // 在这里spring ioc容器会调用set方法，为我们的sqlSessionTemplate赋值
     if (this.sqlSessionTemplate == null || sqlSessionFactory != this.sqlSessionTemplate.getSqlSessionFactory()) {
       this.sqlSessionTemplate = createSqlSessionTemplate(sqlSessionFactory);
     }
@@ -119,6 +120,7 @@ public abstract class SqlSessionDaoSupport extends DaoSupport {
    */
   @Override
   protected void checkDaoConfig() {
+    // 检查sqlSessionFactory或者sqlSessionTemplate是否为空
     notNull(this.sqlSessionTemplate, "Property 'sqlSessionFactory' or 'sqlSessionTemplate' are required");
   }
 

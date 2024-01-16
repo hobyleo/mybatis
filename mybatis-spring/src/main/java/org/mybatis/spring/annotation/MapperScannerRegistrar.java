@@ -15,12 +15,6 @@
  */
 package org.mybatis.spring.annotation;
 
-import java.lang.annotation.Annotation;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
-import java.util.stream.Collectors;
-
 import org.mybatis.spring.mapper.ClassPathMapperScanner;
 import org.mybatis.spring.mapper.MapperFactoryBean;
 import org.mybatis.spring.mapper.MapperScannerConfigurer;
@@ -37,6 +31,12 @@ import org.springframework.core.io.ResourceLoader;
 import org.springframework.core.type.AnnotationMetadata;
 import org.springframework.util.ClassUtils;
 import org.springframework.util.StringUtils;
+
+import java.lang.annotation.Annotation;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+import java.util.stream.Collectors;
 
 /**
  * A {@link ImportBeanDefinitionRegistrar} to allow annotation configuration of MyBatis mapper scanning. Using
@@ -69,8 +69,14 @@ public class MapperScannerRegistrar implements ImportBeanDefinitionRegistrar, Re
    */
   @Override
   public void registerBeanDefinitions(AnnotationMetadata importingClassMetadata, BeanDefinitionRegistry registry) {
+    /**
+     * 从我们传入的配置类中来解析@MapperScan注解信息，然后把MapperScan注解的属性转化为AnnotationAttributes类型(Map类型)
+     */
     AnnotationAttributes mapperScanAttrs = AnnotationAttributes
         .fromMap(importingClassMetadata.getAnnotationAttributes(MapperScan.class.getName()));
+    /**
+     * 若上一步解析出来的mapperScanAttrs不为空(说明配置类上加了@MapperScan注解)
+     */
     if (mapperScanAttrs != null) {
       registerBeanDefinitions(importingClassMetadata, mapperScanAttrs, registry,
           generateBaseBeanName(importingClassMetadata, 0));
@@ -80,39 +86,63 @@ public class MapperScannerRegistrar implements ImportBeanDefinitionRegistrar, Re
   void registerBeanDefinitions(AnnotationMetadata annoMeta, AnnotationAttributes annoAttrs,
       BeanDefinitionRegistry registry, String beanName) {
 
+    /**
+     * 创建bean定义构造器，来构建出我们的bean定义MapperScannerConfigurer
+     */
     BeanDefinitionBuilder builder = BeanDefinitionBuilder.genericBeanDefinition(MapperScannerConfigurer.class);
     builder.addPropertyValue("processPropertyPlaceHolders", true);
 
+    /**
+     * 为MapperScannerConfigurer指定扫描的注解类型
+     */
     Class<? extends Annotation> annotationClass = annoAttrs.getClass("annotationClass");
     if (!Annotation.class.equals(annotationClass)) {
       builder.addPropertyValue("annotationClass", annotationClass);
     }
 
+    /**
+     * 是否配置了标记接口
+     */
     Class<?> markerInterface = annoAttrs.getClass("markerInterface");
     if (!Class.class.equals(markerInterface)) {
       builder.addPropertyValue("markerInterface", markerInterface);
     }
 
+    /**
+     * 设置MapperScannerConfigurer的beanName生成器
+     */
     Class<? extends BeanNameGenerator> generatorClass = annoAttrs.getClass("nameGenerator");
     if (!BeanNameGenerator.class.equals(generatorClass)) {
       builder.addPropertyValue("nameGenerator", BeanUtils.instantiateClass(generatorClass));
     }
 
+    /**
+     * 设置自定义的MapperFactoryBean类型
+     */
     Class<? extends MapperFactoryBean> mapperFactoryBeanClass = annoAttrs.getClass("factoryBean");
     if (!MapperFactoryBean.class.equals(mapperFactoryBeanClass)) {
       builder.addPropertyValue("mapperFactoryBeanClass", mapperFactoryBeanClass);
     }
 
+    /**
+     * 使用哪个sqlSessionTemplate，多数据源的情况下需要指定
+     */
     String sqlSessionTemplateRef = annoAttrs.getString("sqlSessionTemplateRef");
     if (StringUtils.hasText(sqlSessionTemplateRef)) {
       builder.addPropertyValue("sqlSessionTemplateBeanName", annoAttrs.getString("sqlSessionTemplateRef"));
     }
 
+    /**
+     * 使用哪个sqlSessionFactory，多数据源的情况下需要指定
+     */
     String sqlSessionFactoryRef = annoAttrs.getString("sqlSessionFactoryRef");
     if (StringUtils.hasText(sqlSessionFactoryRef)) {
       builder.addPropertyValue("sqlSessionFactoryBeanName", annoAttrs.getString("sqlSessionFactoryRef"));
     }
 
+    /**
+     * 解析@MapperScan扫描的包或者是class对象
+     */
     List<String> basePackages = new ArrayList<>();
     basePackages.addAll(
         Arrays.stream(annoAttrs.getStringArray("value")).filter(StringUtils::hasText).collect(Collectors.toList()));
@@ -127,6 +157,9 @@ public class MapperScannerRegistrar implements ImportBeanDefinitionRegistrar, Re
       basePackages.add(getDefaultBasePackage(annoMeta));
     }
 
+    /**
+     * 指定MapperScannerConfigurer是否为懒加载
+     */
     String lazyInitialization = annoAttrs.getString("lazyInitialization");
     if (StringUtils.hasText(lazyInitialization)) {
       builder.addPropertyValue("lazyInitialization", lazyInitialization);
@@ -142,6 +175,9 @@ public class MapperScannerRegistrar implements ImportBeanDefinitionRegistrar, Re
     // for spring-native
     builder.setRole(BeanDefinition.ROLE_INFRASTRUCTURE);
 
+    /**
+     * 向Spring容器中注册MapperScannerConfigurer
+     */
     registry.registerBeanDefinition(beanName, builder.getBeanDefinition());
 
   }

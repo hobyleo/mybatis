@@ -15,23 +15,6 @@
  */
 package org.mybatis.spring;
 
-import static org.springframework.util.Assert.notNull;
-import static org.springframework.util.Assert.state;
-import static org.springframework.util.ObjectUtils.isEmpty;
-import static org.springframework.util.StringUtils.hasLength;
-import static org.springframework.util.StringUtils.tokenizeToStringArray;
-
-import java.io.IOException;
-import java.lang.reflect.Modifier;
-import java.sql.SQLException;
-import java.util.HashSet;
-import java.util.Optional;
-import java.util.Properties;
-import java.util.Set;
-import java.util.stream.Stream;
-
-import javax.sql.DataSource;
-
 import org.apache.ibatis.builder.xml.XMLConfigBuilder;
 import org.apache.ibatis.builder.xml.XMLMapperBuilder;
 import org.apache.ibatis.cache.Cache;
@@ -68,6 +51,22 @@ import org.springframework.core.type.classreading.MetadataReaderFactory;
 import org.springframework.jdbc.datasource.TransactionAwareDataSourceProxy;
 import org.springframework.util.ClassUtils;
 
+import javax.sql.DataSource;
+import java.io.IOException;
+import java.lang.reflect.Modifier;
+import java.sql.SQLException;
+import java.util.HashSet;
+import java.util.Optional;
+import java.util.Properties;
+import java.util.Set;
+import java.util.stream.Stream;
+
+import static org.springframework.util.Assert.notNull;
+import static org.springframework.util.Assert.state;
+import static org.springframework.util.ObjectUtils.isEmpty;
+import static org.springframework.util.StringUtils.hasLength;
+import static org.springframework.util.StringUtils.tokenizeToStringArray;
+
 /**
  * {@code FactoryBean} that creates a MyBatis {@code SqlSessionFactory}. This is the usual way to set up a shared
  * MyBatis {@code SqlSessionFactory} in a Spring application context; the SqlSessionFactory can then be passed to
@@ -94,20 +93,38 @@ public class SqlSessionFactoryBean
   private static final ResourcePatternResolver RESOURCE_PATTERN_RESOLVER = new PathMatchingResourcePatternResolver();
   private static final MetadataReaderFactory METADATA_READER_FACTORY = new CachingMetadataReaderFactory();
 
+  /**
+   * 用于保存指定mybatis的配置类
+   */
   private Resource configLocation;
 
   private Configuration configuration;
 
+  /**
+   * 指定mapper的xml的位置
+   */
   private Resource[] mapperLocations;
 
+  /**
+   * 保存我们的数据源
+   */
   private DataSource dataSource;
 
+  /**
+   * 事务工厂对象
+   */
   private TransactionFactory transactionFactory;
 
   private Properties configurationProperties;
 
+  /**
+   * SqlSessionFactory构建器
+   */
   private SqlSessionFactoryBuilder sqlSessionFactoryBuilder = new SqlSessionFactoryBuilder();
 
+  /**
+   * 我们的SqlSessionFactory对象
+   */
   private SqlSessionFactory sqlSessionFactory;
 
   // EnvironmentAware requires spring 3.1
@@ -115,19 +132,44 @@ public class SqlSessionFactoryBean
 
   private boolean failFast;
 
+  /**
+   * mybatis的插件拦截器对象
+   * Executor (update, query, flushStatements, commit, rollback, getTransaction, close, isClosed)
+   * ParameterHandler (getParameterObject, setParameters) ResultSetHandler (handleResultSets, handleOutputParameters)
+   * StatementHandler (prepare, parameterize, batch, update, query)
+   */
   private Interceptor[] plugins;
 
+  /**
+   * mybatis的类型处理器，用于转化java类型和数据库类型
+   */
   private TypeHandler<?>[] typeHandlers;
 
+  /**
+   * 指定自定义类型所在的包
+   */
   private String typeHandlersPackage;
 
   @SuppressWarnings("rawtypes")
   private Class<? extends TypeHandler> defaultEnumTypeHandler;
 
+  /**
+   * 别名 <typeAliases><typeAlias type="com.hoby.entity.User" alias="user"></typeAlias></typeAliases>
+   */
   private Class<?>[] typeAliases;
 
+  /**
+   * 若不想一一的去配置<typeAlias></typeAlias>，那么通过该节点可以批量设置别名（别名的名称就是类的名称，不区分大小写)
+   * <typeAliases><package name="com.hoby.entity"></package></typeAliases>
+   */
   private String typeAliasesPackage;
 
+  /**
+   * 通过该开关来控制只支持开启哪种别名
+   * factoryBean.setTypeAliasesPackage("com.hoby.entity");
+   * factoryBean.setTypeAliasesSuperType(Employee.class);
+   * 那么只支持Employee的别名，不支持Dept的别名
+   */
   private Class<?> typeAliasesSuperType;
 
   private LanguageDriver[] scriptingLanguageDrivers;
@@ -139,6 +181,9 @@ public class SqlSessionFactoryBean
 
   private Class<? extends VFS> vfs;
 
+  /**
+   * 二级缓存
+   */
   private Cache cache;
 
   private ObjectFactory objectFactory;
@@ -488,6 +533,9 @@ public class SqlSessionFactoryBean
     state((configuration == null && configLocation == null) || !(configuration != null && configLocation != null),
         "Property 'configuration' and 'configLocation' can not specified with together");
 
+    /**
+     * 通过sqlSessionFactoryBuilder来构建我们的sqlSessionFactory
+     */
     this.sqlSessionFactory = buildSqlSessionFactory();
   }
 
@@ -504,36 +552,72 @@ public class SqlSessionFactoryBean
    */
   protected SqlSessionFactory buildSqlSessionFactory() throws Exception {
 
+    // 声明一个Configuration对象用于保存mybatis的所有配置信息
     final Configuration targetConfiguration;
 
+    // 初始化Configuration对象，和设置其`variables`属性
     XMLConfigBuilder xmlConfigBuilder = null;
+    /**
+     * 判断当前的SqlSessionFactoryBean是否在配置@Bean的时候设置了configuration
+     * factoryBean.setConfiguration();
+     */
     if (this.configuration != null) {
+      /**
+       * 把配置的SqlSessionFactoryBean的configuration 赋值给targetConfiguration
+       */
       targetConfiguration = this.configuration;
       if (targetConfiguration.getVariables() == null) {
         targetConfiguration.setVariables(this.configurationProperties);
       } else if (this.configurationProperties != null) {
         targetConfiguration.getVariables().putAll(this.configurationProperties);
       }
-    } else if (this.configLocation != null) {
+    }
+    /**
+     * 对configLocation进行非空判断，由于我们配置了SqlSessionFactoryBean的configLocation属性设置
+     * setConfigLocation(new ClassPathResource("mybatis-config.xml"));
+     */
+    else if (this.configLocation != null) {
+      /**
+       * 创建xml配置构建器对象，对mybatis-config.xml配置文件进行解析
+       */
       xmlConfigBuilder = new XMLConfigBuilder(this.configLocation.getInputStream(), null, this.configurationProperties);
       targetConfiguration = xmlConfigBuilder.getConfiguration();
     } else {
       LOGGER.debug(
           () -> "Property 'configuration' or 'configLocation' not specified, using default MyBatis Configuration");
       targetConfiguration = new Configuration();
+      /**
+       * 判断configurationProperties不为空，那么就调用targetConfiguration.set方法，把configurationProperties注入到Configuration对象中
+       */
       Optional.ofNullable(this.configurationProperties).ifPresent(targetConfiguration::setVariables);
     }
 
+    // objectFactory不为空，那么就调用targetConfiguration.set方法，把objectFactory注入到Configuration对象中
     Optional.ofNullable(this.objectFactory).ifPresent(targetConfiguration::setObjectFactory);
+    // objectWrapperFactory不为空，那么就调用targetConfiguration.set方法把，ObjectWrapperFactory注入到Configuration对象中
     Optional.ofNullable(this.objectWrapperFactory).ifPresent(targetConfiguration::setObjectWrapperFactory);
+    // vfs不为空，那么就调用targetConfiguration.set方法，把vfs注入到Configuration对象中
     Optional.ofNullable(this.vfs).ifPresent(targetConfiguration::setVfsImpl);
 
+    /**
+     * typeAliasesPackage配置情况分为二种
+     * 1) 在mybaits-config.xml中配置(mybatis的方式) <typeAliases><package name="com.hoby.entity"></package></typeAliases>
+     * 2) 在配置SqlSessionFactoryBean的时候配置(spring整合mybatis的方式) factoryBean.setTypeAliasesPackage("com.hoby.entity")
+     */
     if (hasLength(this.typeAliasesPackage)) {
+      /**
+       * 第一步：扫描我们typeAliasesPackage包路径下的所有实体类的class类型
+       * 第二步：进行过滤，然后注册到Configuration的别名映射器中
+       */
       scanClasses(this.typeAliasesPackage, this.typeAliasesSuperType).stream()
           .filter(clazz -> !clazz.isAnonymousClass()).filter(clazz -> !clazz.isInterface())
           .filter(clazz -> !clazz.isMemberClass()).forEach(targetConfiguration.getTypeAliasRegistry()::registerAlias);
     }
 
+    /**
+     * 判断我们SqlSessionFactory是否配置了typeAliases(class类型) 一般typeAliasesPackage配置好了 就没有必要配置typeAliases
+     * 注册到Configuration的别名映射器中
+     */
     if (!isEmpty(this.typeAliases)) {
       Stream.of(this.typeAliases).forEach(typeAlias -> {
         targetConfiguration.getTypeAliasRegistry().registerAlias(typeAlias);
@@ -541,6 +625,13 @@ public class SqlSessionFactoryBean
       });
     }
 
+    /**
+     * 把我们自定义的插件注册到mybatis的配置类上
+     * Executor (update, query, flushStatements, commit, rollback, getTransaction, close, isClosed)
+     * StatementHandler (prepare, parameterize, batch, update, query)
+     * ParameterHandler (getParameterObject, setParameters)
+     * ResultSetHandler (handleResultSets, handleOutputParameters)
+     */
     if (!isEmpty(this.plugins)) {
       Stream.of(this.plugins).forEach(plugin -> {
         targetConfiguration.addInterceptor(plugin);
@@ -548,12 +639,18 @@ public class SqlSessionFactoryBean
       });
     }
 
+    /**
+     * 扫描类型处理器(用来处理java类型和数据库类型的转化) 并且注册到targetConfiguration(批量注册)
+     */
     if (hasLength(this.typeHandlersPackage)) {
       scanClasses(this.typeHandlersPackage, TypeHandler.class).stream().filter(clazz -> !clazz.isAnonymousClass())
           .filter(clazz -> !clazz.isInterface()).filter(clazz -> !Modifier.isAbstract(clazz.getModifiers()))
           .forEach(targetConfiguration.getTypeHandlerRegistry()::register);
     }
 
+    /**
+     * 通过配置<typeHandlers></typeHandlers>的形式来注册我们自定义的类型处理器
+     */
     if (!isEmpty(this.typeHandlers)) {
       Stream.of(this.typeHandlers).forEach(typeHandler -> {
         targetConfiguration.getTypeHandlerRegistry().register(typeHandler);
@@ -563,6 +660,10 @@ public class SqlSessionFactoryBean
 
     targetConfiguration.setDefaultEnumTypeHandler(defaultEnumTypeHandler);
 
+    /**
+     * MyBatis 从 3.2 开始支持可插拔的脚本语言，因此你可以在插入一种语言驱动（language driver）之后来写基于这种语言的动态 SQL 查询
+     * 具体用法：https://www.jianshu.com/p/5c368c621b89
+     */
     if (!isEmpty(this.scriptingLanguageDrivers)) {
       Stream.of(this.scriptingLanguageDrivers).forEach(languageDriver -> {
         targetConfiguration.getLanguageRegistry().register(languageDriver);
@@ -572,6 +673,9 @@ public class SqlSessionFactoryBean
     Optional.ofNullable(this.defaultScriptingLanguageDriver)
         .ifPresent(targetConfiguration::setDefaultScriptingLanguage);
 
+    /**
+     * 设置数据库厂商
+     */
     if (this.databaseIdProvider != null) {// fix #64 set databaseId before parse mapper xmls
       try {
         targetConfiguration.setDatabaseId(this.databaseIdProvider.getDatabaseId(this.dataSource));
@@ -580,10 +684,16 @@ public class SqlSessionFactoryBean
       }
     }
 
+    /**
+     * 若二级缓存不为空，注册二级缓存
+     */
     Optional.ofNullable(this.cache).ifPresent(targetConfiguration::addCache);
 
     if (xmlConfigBuilder != null) {
       try {
+        /**
+         * 真正的解析我们的配置(mybatis-config.xml)的document对象
+         */
         xmlConfigBuilder.parse();
         LOGGER.debug(() -> "Parsed configuration file: '" + this.configLocation + "'");
       } catch (Exception ex) {
@@ -593,10 +703,17 @@ public class SqlSessionFactoryBean
       }
     }
 
+    /**
+     * 为我们的configuration设置一个环境变量
+     */
     targetConfiguration.setEnvironment(new Environment(this.environment,
         this.transactionFactory == null ? new SpringManagedTransactionFactory() : this.transactionFactory,
         this.dataSource));
 
+    /**
+     * 循环我们的mapper.xml文件
+     * factoryBean.setMapperLocations(new PathMatchingResourcePatternResolver().getResources("classpath:mapper/*.xml"));
+     */
     if (this.mapperLocations != null) {
       if (this.mapperLocations.length == 0) {
         LOGGER.warn(() -> "Property 'mapperLocations' was specified but matching resources are not found.");

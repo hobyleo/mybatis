@@ -15,8 +15,6 @@
  */
 package org.mybatis.spring;
 
-import static org.springframework.util.Assert.notNull;
-
 import org.apache.ibatis.exceptions.PersistenceException;
 import org.apache.ibatis.mapping.Environment;
 import org.apache.ibatis.session.ExecutorType;
@@ -31,6 +29,8 @@ import org.springframework.dao.support.PersistenceExceptionTranslator;
 import org.springframework.jdbc.datasource.DataSourceUtils;
 import org.springframework.transaction.support.TransactionSynchronizationAdapter;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
+
+import static org.springframework.util.Assert.notNull;
 
 /**
  * Handles MyBatis SqlSession life cycle. It can register and get SqlSessions from Spring
@@ -94,16 +94,29 @@ public final class SqlSessionUtils {
     notNull(sessionFactory, NO_SQL_SESSION_FACTORY_SPECIFIED);
     notNull(executorType, NO_EXECUTOR_TYPE_SPECIFIED);
 
+    /**
+     * 首先去事务同步管理器对象中获取我们的sessionHolder
+     */
     SqlSessionHolder holder = (SqlSessionHolder) TransactionSynchronizationManager.getResource(sessionFactory);
 
+    /**
+     * 从事务管理器中获取我们的sqlSession对象
+     */
     SqlSession session = sessionHolder(executorType, holder);
     if (session != null) {
+      // session不为空直接返回
       return session;
     }
 
     LOGGER.debug(() -> "Creating a new SqlSession");
+    /**
+     * 否则新开一个session
+     */
     session = sessionFactory.openSession(executorType);
 
+    /**
+     * 把我们的session绑定到事务线程变量中
+     */
     registerSessionHolder(sessionFactory, executorType, exceptionTranslator, session);
 
     return session;
@@ -158,15 +171,25 @@ public final class SqlSessionUtils {
 
   private static SqlSession sessionHolder(ExecutorType executorType, SqlSessionHolder holder) {
     SqlSession session = null;
+    /**
+     * 判断事务同步管理器对象中获取出来的holder对象是否为空 && holder是否为激活的
+     */
     if (holder != null && holder.isSynchronizedWithTransaction()) {
+      /**
+       * 在同一个事务中，我们的执行器类型是不能改变的
+       */
       if (holder.getExecutorType() != executorType) {
         throw new TransientDataAccessResourceException(
             "Cannot change the ExecutorType when there is an existing transaction");
       }
 
+      /**
+       * 当前holder的引用次数加1
+       */
       holder.requested();
 
       LOGGER.debug(() -> "Fetched SqlSession [" + holder.getSqlSession() + "] from current transaction");
+      // 获取holder持有的session对象
       session = holder.getSqlSession();
     }
     return session;

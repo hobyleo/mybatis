@@ -15,12 +15,6 @@
  */
 package org.mybatis.spring.mapper;
 
-import static org.springframework.util.Assert.notNull;
-
-import java.lang.annotation.Annotation;
-import java.util.Map;
-import java.util.Optional;
-
 import org.apache.ibatis.session.SqlSessionFactory;
 import org.mybatis.spring.SqlSessionTemplate;
 import org.springframework.beans.PropertyValue;
@@ -40,6 +34,12 @@ import org.springframework.context.ApplicationContextAware;
 import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.core.env.Environment;
 import org.springframework.util.StringUtils;
+
+import java.lang.annotation.Annotation;
+import java.util.Map;
+import java.util.Optional;
+
+import static org.springframework.util.Assert.notNull;
 
 /**
  * BeanDefinitionRegistryPostProcessor that searches recursively starting from a base package for interfaces and
@@ -344,16 +344,26 @@ public class MapperScannerConfigurer
   }
 
   /**
+   * @MapperScan ==> 向容器中添加MapperScannerConfigurer的bean定义，
+   * MapperScannerConfigurer实现了BeanDefinitionRegistryPostProcessor，
+   * 所以在ioc容器refresh方法的时候会调用postProcessBeanDefinitionRegistry来向容器中注册@MapperScan指定的mapper包下的bean定义到容器中
    * {@inheritDoc}
    *
    * @since 1.0.2
    */
   @Override
   public void postProcessBeanDefinitionRegistry(BeanDefinitionRegistry registry) {
+    /**
+     * 若MapperScannerConfigurer属性的processPropertyPlaceHolders为ture的时候，就进行processPropertyPlaceHolders()
+     */
     if (this.processPropertyPlaceHolders) {
       processPropertyPlaceHolders();
     }
 
+    /**
+     * 显示地new一个ClassPathMapperScanner包扫描器对象，这个对象继承了Spring的ClassPathBeanDefinitionScanner
+     * 为我们扫描器指定@MapperScan属性
+     */
     ClassPathMapperScanner scanner = new ClassPathMapperScanner(registry);
     scanner.setAddToConfig(this.addToConfig);
     scanner.setAnnotationClass(this.annotationClass);
@@ -371,25 +381,46 @@ public class MapperScannerConfigurer
     if (StringUtils.hasText(defaultScope)) {
       scanner.setDefaultScope(defaultScope);
     }
+    /**
+     * 扫描规则过滤
+     */
     scanner.registerFilters();
+    /**
+     * 真正的去扫描@MapperScan指定路径下的bean定义信息，先会去调用父类ClassPathMapperScanner.scan()方法
+     */
     scanner.scan(
         StringUtils.tokenizeToStringArray(this.basePackage, ConfigurableApplicationContext.CONFIG_LOCATION_DELIMITERS));
   }
 
-  /*
+  /**
+   * BeanDefinitionRegistries在BeanFactoryPostProcessors之前被调用，
+   * 这意味着PropertyResourceConfigurers不会被加载，并且此类属性的任何属性替换都将失败，
+   * 为了避免这种情况，找到上下文中定义的任何PropertyResourceConfigurers，并在该类的bean定义上运行它们，然后更新这些值。
+   *
    * BeanDefinitionRegistries are called early in application startup, before BeanFactoryPostProcessors. This means that
    * PropertyResourceConfigurers will not have been loaded and any property substitution of this class' properties will
    * fail. To avoid this, find any PropertyResourceConfigurers defined in the context and run them on this class' bean
    * definition. Then update the values.
    */
   private void processPropertyPlaceHolders() {
+    /**
+     * 获取容器中所有PropertyResourceConfigurer的组件
+     */
     Map<String, PropertyResourceConfigurer> prcs = applicationContext.getBeansOfType(PropertyResourceConfigurer.class,
         false, false);
 
+    /**
+     * 判断PropertyResourceConfigurer的集合不为空，并且applicationContext是ConfigurableApplicationContext
+     */
     if (!prcs.isEmpty() && applicationContext instanceof ConfigurableApplicationContext) {
+      // 去容器中获取MapperScannerConfigurer组件的名称
       BeanDefinition mapperScannerBean = ((ConfigurableApplicationContext) applicationContext).getBeanFactory()
           .getBeanDefinition(beanName);
 
+      /**
+       * PropertyResourceConfigurer没有公开任何显式执行属性占位符替换的方法，
+       * 相反，创建一个只包含这个映射器扫描器的BeanFactory，并对工厂进行后置处理。
+       */
       // PropertyResourceConfigurer does not expose any methods to explicitly perform
       // property placeholder substitution. Instead, create a BeanFactory that just
       // contains this mapper scanner and post process the factory.
@@ -402,6 +433,9 @@ public class MapperScannerConfigurer
 
       PropertyValues values = mapperScannerBean.getPropertyValues();
 
+      /**
+       * 更新MapperScannerBean属性中可能有${}包裹的字段
+       */
       this.basePackage = getPropertyValue("basePackage", values);
       this.sqlSessionFactoryBeanName = getPropertyValue("sqlSessionFactoryBeanName", values);
       this.sqlSessionTemplateBeanName = getPropertyValue("sqlSessionTemplateBeanName", values);
