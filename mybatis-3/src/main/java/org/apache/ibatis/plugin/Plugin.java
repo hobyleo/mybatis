@@ -15,6 +15,9 @@
  */
 package org.apache.ibatis.plugin;
 
+import org.apache.ibatis.reflection.ExceptionUtil;
+import org.apache.ibatis.util.MapUtil;
+
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
@@ -22,9 +25,6 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
-
-import org.apache.ibatis.reflection.ExceptionUtil;
-import org.apache.ibatis.util.MapUtil;
 
 /**
  * @author Clinton Begin
@@ -42,8 +42,11 @@ public class Plugin implements InvocationHandler {
   }
 
   public static Object wrap(Object target, Interceptor interceptor) {
+    // 获得interceptor配置的@Signature的type
     Map<Class<?>, Set<Method>> signatureMap = getSignatureMap(interceptor);
+    // 当前代理类型
     Class<?> type = target.getClass();
+    // 根据当前代理类型 和 @Signature指定的type 进行配对，配对成功则可以代理
     Class<?>[] interfaces = getAllInterfaces(type, signatureMap);
     if (interfaces.length > 0) {
       return Proxy.newProxyInstance(

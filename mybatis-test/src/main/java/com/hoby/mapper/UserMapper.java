@@ -10,4 +10,6 @@ public interface UserMapper {
 
     User selectById(Integer id);
 
+    void updateUsernameById(Integer id, String username);
+
 }
